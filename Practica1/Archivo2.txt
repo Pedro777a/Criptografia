@@ -1,0 +1,3 @@
+Este es un archivo de prueba de cifrado afin en el que veremos la capacidad 
+de este cifrado para cifar archivos dentro de nuestro programa, prueba prueba prueba 
+ahora vamos a probar con simbolos 932300"+{}
