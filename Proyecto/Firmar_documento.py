@@ -5,6 +5,9 @@ import docx
 import csv
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from PyPDF2 import PdfReader, PdfWriter
 
 Ruta = "Proyecto/"
@@ -13,7 +16,7 @@ Ruta = "Proyecto/"
 def leer_pdf(archivo_pdf):
     texto = ""
     with open(archivo_pdf, 'rb') as file:
-        lector_pdf = PyPDF2.PdfReader(file)
+        lector_pdf = PdfReader(file)
         for pagina in lector_pdf.pages:
             texto += pagina.extract_text()
     return texto
@@ -62,6 +65,49 @@ print("Hash SHA-256:", hash_hex256)
 # Convertir el hash hexadecimal en bytes
 hash_bytes = hash_hex256.encode('utf-8')
 
+# Funcion que genera la firma del hash con la llave privada
+def sign_hash(private_key_path, hash_data):
+    with open(private_key_path, 'rb') as f:
+        private_key = load_pem_private_key(
+            f.read(),
+            password=None
+        )
+    
+    signature = private_key.sign(
+        hash_data,
+        padding.PSS(
+            mgf=padding.MGF1(hashes.SHA256()),
+            salt_length=padding.PSS.MAX_LENGTH
+        ),
+        hashes.SHA256()
+    )
+    return signature
+
+firma = sign_hash(Ruta + "director_private.pem", hash_bytes)
+
+print("ESTA ES MI FIRMA",firma)
+print("ESTA ES MI FIRMA en hexadecimal",firma.hex())
+
+def Guardar_firma(input_pdf, output_pdf, signature):
+    reader = PdfReader(input_pdf)
+    writer = PdfWriter()
+    
+   # Copiar todas las páginas del lector al escritor
+    for page in reader.pages:
+        writer.add_page(page)
+        
+    # Copiar los metadatos existentes y agregar el nuevo metadato
+    info_dict = reader.metadata
+    new_info_dict = {**info_dict,"/Signature": signature.hex()}
+
+    writer.add_metadata(new_info_dict)
+
+    # Guardar el PDF con los metadatos actualizados
+    with open(output_pdf, 'wb') as f:
+        writer.write(f)
+    
+
+Guardar_firma(Ruta+Nombre_archivo,Ruta+"Firma_doc.pdf",firma)
 # Cargar las claves desde los archivos 
 llave_privada = RSA.import_key(open(Ruta + "director_private.pem").read())
 

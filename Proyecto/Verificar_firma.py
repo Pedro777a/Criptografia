@@ -51,7 +51,7 @@ def leer_archivo(ruta_archivo):
         return "Formato de archivo no soportado."
 
 # Leer el PDF con los metadatos
-pdf_path = Ruta+'Documento_firmado.pdf'
+pdf_path = Ruta+'Firma_doc.pdf'
 pdf_reader = PdfReader(pdf_path)
 
 contenido = leer_archivo(pdf_path)
