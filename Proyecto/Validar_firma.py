@@ -52,10 +52,11 @@ def leer_archivo(ruta_archivo):
     else:
         return "Formato de archivo no soportado."
 
+# Funcion que calcula el hash de nuestro documento
 def calcular_hash(ruta_archivo):
     contenido = leer_archivo(ruta_archivo)
     hash_sha256 = hashlib.sha256()
-    hash_sha256.update(contenido.encode('utf-8'))  # Asegurarse de actualizar el hash con el contenido
+    hash_sha256.update(contenido.encode('utf-8')) 
     hash_hex256 = hash_sha256.hexdigest()
 
     print("Hash SHA-256:", hash_hex256)
@@ -65,7 +66,7 @@ def calcular_hash(ruta_archivo):
 
     return hash_bytes
 
-
+# FUncion para verificar la firma del documento con el hash del mismo
 def verify_signature(public_key_path, file_path, signature):
     with open(public_key_path, 'rb') as f:
         public_key = load_pem_public_key(f.read())
@@ -87,16 +88,17 @@ def verify_signature(public_key_path, file_path, signature):
         return False
 
 # Extraer la firma del documento firmado
-def extract_signature_from_pdf(signed_pdf):
+def extract_signature_from_pdf(signed_pdf,remitente):
     reader = PdfReader(signed_pdf)
     metadata = reader.metadata
     print(metadata)
-    signature_hex = metadata.get("/Signature")
+    signature_hex = metadata.get(remitente)
     return bytes.fromhex(signature_hex) if signature_hex else None
 
 # Verificar la firma
-signed_pdf = Ruta+'Firma_doc.pdf'
-extracted_signature = extract_signature_from_pdf(signed_pdf)
+Nombre=input("Ingrese el nombre del documento a verificar: ")
+signed_pdf = Ruta+Nombre
+extracted_signature = extract_signature_from_pdf(signed_pdf,'/firma_director')
 print(extracted_signature)
 
 if extracted_signature:
