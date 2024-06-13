@@ -11,6 +11,7 @@ from Crypto.Cipher import PKCS1_OAEP
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
+import json
 
 Ruta = "Proyecto/"
 
@@ -72,15 +73,42 @@ def DescifrarllaveAES(mensaje_cifrado,private_key):
     mensaje_descifrado = cipher_rsa.decrypt(mensaje_cifrado)
     return mensaje_descifrado
 
-def CifradoAES(key, mensaje):
-    # Generar un nonce (Número Único de 12 bytes)
-    nonce = get_random_bytes(12)
-    # Crear un objeto de cifrado AES en modo GCM
+def DescifradoAES_Archivo(key, archivo_cifrado, archivo_salida):
+    # Leer el contenido del archivo cifrado
+    with open(Ruta+archivo_cifrado, 'rb') as f:
+        contenido_cifrado = f.read()
+    
+    # Leer la longitud de los metadatos
+    metadatos_len = int.from_bytes(contenido_cifrado[:4], byteorder='big')
+    
+    # Extraer los metadatos
+    metadatos_json = contenido_cifrado[4:4 + metadatos_len]
+    metadatos = json.loads(metadatos_json.decode('utf-8'))
+    
+    # Separar el nonce, el texto cifrado y el tag de autenticación
+    nonce = contenido_cifrado[4 + metadatos_len:4 + metadatos_len + 12]
+    tag = contenido_cifrado[-16:]
+    textocifrado = contenido_cifrado[4 + metadatos_len + 12:-16]
+    
+    # Crear un objeto de descifrado AES en modo GCM
     cifrador = AES.new(key, AES.MODE_GCM, nonce=nonce)
-    # Ciframos nuestro mensaje mediante el objeto de cifrado
-    textocifrado, tag = cifrador.encrypt_and_digest(mensaje)
-    # Regresamos el nonce, el archivo cifrado y el tag de autenticación
-    return nonce + textocifrado + tag
+    
+    # Descifrar y verificar el contenido del archivo
+    contenido = cifrador.decrypt_and_verify(textocifrado, tag)
+    
+    # Guardar el contenido descifrado en el archivo de salida
+    with open(Ruta+archivo_salida, 'wb') as f:
+        f.write(contenido)
+    
+    # Añadir los metadatos al archivo PDF descifrado
+    with open(Ruta+archivo_salida, 'rb') as f:
+        reader = PdfReader(f)
+        writer = PdfWriter()
+        writer.append_pages_from_reader(reader)
+        writer.add_metadata(metadatos)
+    
+    with open(Ruta+archivo_salida, 'wb') as f:
+        writer.write(f)
 
 # Importamos la llave privada 
 with open(Ruta+'director_private.pem', 'rb') as f:
@@ -95,3 +123,5 @@ llave_cifrada=key=base64.b64decode(contenido)
 print(llave_cifrada) 
 llave=DescifrarllaveAES(llave_cifrada,private_key)
 print("Llave descifrada: ",llave)
+
+DescifradoAES_Archivo(llave, 'reporte_cifrado.pdf', 'reporte_descifrado.pdf')

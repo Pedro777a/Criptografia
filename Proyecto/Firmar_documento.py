@@ -114,5 +114,5 @@ print("ESTA ES MI FIRMA",firma)
 print("ESTA ES MI FIRMA en hexadecimal",firma.hex())
 
 # Guardamos nuestra firma en los metadatos de un nuevo documento 
-Guardar_firma(Ruta+Nombre_archivo,Ruta+"Firma_doc.pdf",firma,'/fima_director')
+Guardar_firma(Ruta+Nombre_archivo,Ruta+"Firma_doc.pdf",firma,'/firma_director')
 print("Firma guardada dentro del documento ")
