@@ -23,6 +23,7 @@ usuarios = [
 ]
 
 # Funciones del backend del proyecto
+# Funcion que nos permite leer pdf
 def leer_pdf(archivo_pdf):
     texto = ""
     with open(archivo_pdf, 'rb') as file:
@@ -31,12 +32,14 @@ def leer_pdf(archivo_pdf):
             texto += pagina.extract_text()
     return texto
 
+# Funcion que lee el archivo de acuerdo con su extension
 def leer_archivo(ruta_archivo):
     if ruta_archivo.endswith('.pdf'):
         return leer_pdf(ruta_archivo)
     else:
         return "Formato de archivo no soportado."
 
+# Funcion que genera o carga las llaves RSA para cada usuario
 def generar_o_cargar_rsa_keys(nombre_archivo_privado, nombre_archivo_publico):
     if not os.path.exists(Ruta + nombre_archivo_privado) or not os.path.exists(Ruta + nombre_archivo_publico):
         key = RSA.generate(2048)
@@ -51,9 +54,9 @@ def generar_o_cargar_rsa_keys(nombre_archivo_privado, nombre_archivo_publico):
     else:
         print(f"Las llaves ya existen en {Ruta + nombre_archivo_privado} y {Ruta + nombre_archivo_publico}")
 
+# Funcion que calcula el Hash de un archivo con SHA-256
 def calcular_hash(ruta_archivo):
     contenido = leer_archivo(ruta_archivo)
-    print(contenido)
 
     hash_sha256 = hashlib.sha256()
     hash_sha256.update(contenido.encode('utf-8'))
@@ -64,6 +67,8 @@ def calcular_hash(ruta_archivo):
     hash_bytes = hash_hex256.encode('utf-8')
     return hash_bytes
 
+# Funcion que crea una firma con la llave privada de nuestro destinatario 
+# y el hash de un archivo
 def sign_hash(private_key_path, hash_data):
     with open(private_key_path, 'rb') as f:
         private_key = load_pem_private_key(
@@ -81,6 +86,8 @@ def sign_hash(private_key_path, hash_data):
     )
     return signature
 
+# Funcion que guarda una firma dentro de los metadatos de un archivo
+# Con el rol de quien lo firma
 def guardar_firma(input_pdf, output_pdf, signature, remitente):
     reader = PdfReader(input_pdf)
     writer = PdfWriter()
@@ -96,6 +103,7 @@ def guardar_firma(input_pdf, output_pdf, signature, remitente):
     with open(output_pdf, 'wb') as f:
         writer.write(f)
 
+# Funcion que verifica una firma de con la llave publica de las llaves RSA
 def verify_signature(public_key_path, file_path, signature):
     with open(public_key_path, 'rb') as f:
         public_key = load_pem_public_key(f.read())
@@ -116,6 +124,7 @@ def verify_signature(public_key_path, file_path, signature):
     except Exception as e:
         return False
 
+# Funcion que extrae la firma de los metadatos de un archivo
 def extract_signature_from_pdf(signed_pdf, remitente):
     reader = PdfReader(signed_pdf)
     metadata = reader.metadata
@@ -123,10 +132,12 @@ def extract_signature_from_pdf(signed_pdf, remitente):
     signature_hex = metadata.get(remitente)
     return bytes.fromhex(signature_hex) if signature_hex else None
 
+# Funcion que genera la llave de AES para cifrar un archivo
 def GenerarllaveAES(numbytes):
     key= get_random_bytes(numbytes)
     return key
 
+# Funcion que convierte un texto binario a base 64
 def convb64(Contenido):
     contenido_codificado = base64.b64encode(Contenido)
     return contenido_codificado
@@ -137,17 +148,21 @@ def Guardar_en_archivo(Contenido,Nombrearchivo):
     with open(Ruta+Nombrearchivo, 'wb') as archivo:
             archivo.write(Contenido)
 
+# Funcion que realiza el key wrapping de una llave de AES con una llave publica
 def CifrarllaveAES(mensaje_bytes,public_key):
     cipher_rsa = PKCS1_OAEP.new(public_key)
     mensaje_cifrado = cipher_rsa.encrypt(mensaje_bytes)
     return mensaje_cifrado
 
+# Funcon que extrae los metadatos de un archivo
 def extraer_metadatos(archivo_pdf):
     with open(archivo_pdf, 'rb') as f:
         reader = PdfReader(f)
         metadatos = reader.metadata
     return dict(metadatos)
 
+# Fucnion que realiza el cifrado de AES de un archivo 
+# Y tambien ingresa los metadatos del archivo orignal al archivo cifrado
 def CifradoAES_Archivo_conmetadatos(key, archivo_entrada, archivo_salida):
     # Generar un nonce (Número Único de 12 bytes)
     nonce = get_random_bytes(12)
@@ -168,11 +183,13 @@ def CifradoAES_Archivo_conmetadatos(key, archivo_entrada, archivo_salida):
         f.write(metadatos_json)
         f.write(nonce + textocifrado + tag)
 
+# Funcion que descifra la llave de AES con la llave privada
 def DescifrarllaveAES(mensaje_cifrado,private_key):
     cipher_rsa = PKCS1_OAEP.new(private_key)
     mensaje_descifrado = cipher_rsa.decrypt(mensaje_cifrado)
     return mensaje_descifrado
 
+# Funcion que descifra AES de un archivo conservando sus metadatos
 def DescifradoAES_Archivo(key, archivo_cifrado, archivo_salida):
     # Leer el contenido del archivo cifrado
     with open(Ruta+archivo_cifrado, 'rb') as f:
@@ -189,11 +206,6 @@ def DescifradoAES_Archivo(key, archivo_cifrado, archivo_salida):
     nonce = contenido_cifrado[4 + metadatos_len:4 + metadatos_len + 12]
     tag = contenido_cifrado[-16:]
     textocifrado = contenido_cifrado[4 + metadatos_len + 12:-16]
-
-    print(f"Nonce: {nonce}")
-    print(f"Tag: {tag}")
-    print(f"Texto cifrado: {textocifrado}")
-    print(f"Longitud del texto cifrado: {len(textocifrado)}")
     
     # Crear un objeto de descifrado AES en modo GCM
     cifrador = AES.new(key, AES.MODE_GCM, nonce=nonce)
@@ -219,6 +231,7 @@ def DescifradoAES_Archivo(key, archivo_cifrado, archivo_salida):
     with open(Ruta+archivo_salida, 'wb') as f:
         writer.write(f)
 
+# Funcion que muestra el flujo del cifrado de archivos 
 def cifrar_archivo(rol_destinatario):
     llave_publica = Ruta + rol_destinatario + "_public.pem"
     if 'archivo_seleccionado' not in globals():
@@ -233,6 +246,7 @@ def cifrar_archivo(rol_destinatario):
     CifradoAES_Archivo_conmetadatos(key, archivo_seleccionado, "documento_cifrado.pdf")
     print("El documento ha sido cifrado y la llave ha sido guardada.")
 
+# Funcion que muestra el flujo de descifrado de archivos
 def Descifrar_archivo(user):
     llave_privada = Ruta + user['role'] + "_private.pem"
     if 'archivo_seleccionado' not in globals():
@@ -247,15 +261,16 @@ def Descifrar_archivo(user):
     with open(ruta_llave_aes_cifrada, 'rb') as f:
         mensaje_cifrado = f.read()
 
-    print(mensaje_cifrado)
-    llave_cifrada=key=base64.b64decode(mensaje_cifrado)
-    key = DescifrarllaveAES(llave_cifrada, private_key)
-    print(f"Descifre la llave: {key}")
-    DescifradoAES_Archivo(key, nombre_archivo, "documento_descifrado.pdf")
-    messagebox.showinfo("Éxito", "El documento ha sido descifrado correctamente.")
-    """except Exception as e:
+    try:
+        llave_cifrada=key=base64.b64decode(mensaje_cifrado)
+        key = DescifrarllaveAES(llave_cifrada, private_key)
+        print(f"Descifre la llave: {key}")
+        DescifradoAES_Archivo(key, nombre_archivo, "documento_descifrado.pdf")
+        messagebox.showinfo("Éxito", "El documento ha sido descifrado correctamente.")
+    except Exception as e:
         messagebox.showerror("Error", f"Error al descifrar el documento: {e}")
-"""
+
+# Funcion para el inicio de sesion de usuarios
 def iniciar_sesion():
     usuario = entry_usuario.get()
     contrasena = entry_contrasena.get()
@@ -267,14 +282,17 @@ def iniciar_sesion():
             return
     messagebox.showerror("Error", "Usuario o contraseña incorrectos")
 
+# Funcion para el cerrar sesion de los usuarios
 def cerrar_sesion(ventana):
     ventana.destroy()
     crear_ventana_login()
 
+# Funcion para regresar al menu
 def volver_menu(ventana, ventana_principal):
     ventana.destroy()
     ventana_principal.deiconify()
 
+# Funcion que nos permite subir un archivo con el explorador de archivos
 def subir_reporte():
     file_path = filedialog.askopenfilename(initialdir=Ruta)
     if file_path:
@@ -284,6 +302,7 @@ def subir_reporte():
     else:
         print("No se seleccionó ningún archivo")
 
+# Funcion que nos muestra el flujo de firma de documento
 def firmar_documento(user):
     llave_privada = Ruta + user['role'] + "_private.pem"
     if 'archivo_seleccionado' not in globals():
