@@ -66,7 +66,7 @@ def calcular_hash(ruta_archivo):
 
     return hash_bytes
 
-# FUncion para verificar la firma del documento con el hash del mismo
+# Funcion para verificar la firma del documento con el hash del mismo
 def verify_signature(public_key_path, file_path, signature):
     with open(public_key_path, 'rb') as f:
         public_key = load_pem_public_key(f.read())

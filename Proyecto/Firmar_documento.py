@@ -3,12 +3,12 @@ import hashlib
 import PyPDF2
 import docx
 import csv
+from PyPDF2 import PdfReader, PdfWriter
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
-from PyPDF2 import PdfReader, PdfWriter
 
 Ruta = "Proyecto/"
 

@@ -1,9 +1,19 @@
 import os
+import json
+import base64
+import hashlib
+import PyPDF2
 import tkinter as tk
 from tkinter import messagebox, filedialog
+from PyPDF2 import PdfReader, PdfWriter
 from Crypto.PublicKey import RSA
+from Crypto.Cipher import AES, PKCS1_OAEP
+from Crypto.Random import get_random_bytes
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.serialization import load_pem_private_key, load_pem_public_key
 
-Ruta="Proyecto/"
+Ruta = "Proyecto/"
 
 # Datos de ejemplo para los usuarios
 usuarios = [
@@ -12,7 +22,21 @@ usuarios = [
     {'username': 'admin1', 'password': '1234', 'role': 'administrador', 'name': 'Administrador Uno'},
 ]
 
-# Función para generar llaves públicas y privadas de RSA si no existen
+# Funciones del backend del proyecto
+def leer_pdf(archivo_pdf):
+    texto = ""
+    with open(archivo_pdf, 'rb') as file:
+        lector_pdf = PdfReader(file)
+        for pagina in lector_pdf.pages:
+            texto += pagina.extract_text()
+    return texto
+
+def leer_archivo(ruta_archivo):
+    if ruta_archivo.endswith('.pdf'):
+        return leer_pdf(ruta_archivo)
+    else:
+        return "Formato de archivo no soportado."
+
 def generar_o_cargar_rsa_keys(nombre_archivo_privado, nombre_archivo_publico):
     if not os.path.exists(Ruta + nombre_archivo_privado) or not os.path.exists(Ruta + nombre_archivo_publico):
         key = RSA.generate(2048)
@@ -27,25 +51,152 @@ def generar_o_cargar_rsa_keys(nombre_archivo_privado, nombre_archivo_publico):
     else:
         print(f"Las llaves ya existen en {Ruta + nombre_archivo_privado} y {Ruta + nombre_archivo_publico}")
 
-# Función para verificar las credenciales e iniciar sesión
+def calcular_hash(ruta_archivo):
+    contenido = leer_archivo(ruta_archivo)
+    print(contenido)
+
+    hash_sha256 = hashlib.sha256()
+    hash_sha256.update(contenido.encode('utf-8'))
+    hash_hex256 = hash_sha256.hexdigest()
+
+    print("Hash SHA-256:", hash_hex256)
+
+    hash_bytes = hash_hex256.encode('utf-8')
+    return hash_bytes
+
+def sign_hash(private_key_path, hash_data):
+    with open(private_key_path, 'rb') as f:
+        private_key = load_pem_private_key(
+            f.read(),
+            password=None
+        )
+    
+    signature = private_key.sign(
+        hash_data,
+        padding.PSS(
+            mgf=padding.MGF1(hashes.SHA256()),
+            salt_length=padding.PSS.MAX_LENGTH
+        ),
+        hashes.SHA256()
+    )
+    return signature
+
+def guardar_firma(input_pdf, output_pdf, signature, remitente):
+    reader = PdfReader(input_pdf)
+    writer = PdfWriter()
+    
+    for page in reader.pages:
+        writer.add_page(page)
+        
+    info_dict = reader.metadata
+    new_info_dict = {**info_dict, remitente: signature.hex()}
+
+    writer.add_metadata(new_info_dict)
+
+    with open(output_pdf, 'wb') as f:
+        writer.write(f)
+
+def verify_signature(public_key_path, file_path, signature):
+    with open(public_key_path, 'rb') as f:
+        public_key = load_pem_public_key(f.read())
+    
+    file_hash = calcular_hash(file_path)
+    
+    try:
+        public_key.verify(
+            signature,
+            file_hash,
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.MAX_LENGTH
+            ),
+            hashes.SHA256()
+        )
+        return True
+    except Exception as e:
+        return False
+
+def extract_signature_from_pdf(signed_pdf, remitente):
+    reader = PdfReader(signed_pdf)
+    metadata = reader.metadata
+    print(metadata)
+    signature_hex = metadata.get(remitente)
+    return bytes.fromhex(signature_hex) if signature_hex else None
+
+def GenerarllaveAES(numbytes):
+    key= get_random_bytes(numbytes)
+    return key
+
+def convb64(Contenido):
+    contenido_codificado = base64.b64encode(Contenido)
+    return contenido_codificado
+
+# Funcion que guarda la llave de AES en base 64 dentro de un archivo
+def Guardar_en_archivo(Contenido,Nombrearchivo):
+    Contenido = convb64(Contenido)
+    with open(Ruta+Nombrearchivo, 'wb') as archivo:
+            archivo.write(Contenido)
+
+def CifrarllaveAES(mensaje_bytes,public_key):
+    cipher_rsa = PKCS1_OAEP.new(public_key)
+    mensaje_cifrado = cipher_rsa.encrypt(mensaje_bytes)
+    return mensaje_cifrado
+
+def extraer_metadatos(archivo_pdf):
+    with open(archivo_pdf, 'rb') as f:
+        reader = PdfReader(f)
+        metadatos = reader.metadata
+    return dict(metadatos)
+
+def CifradoAES_Archivo_conmetadatos(key, archivo_entrada, archivo_salida):
+    # Generar un nonce (Número Único de 12 bytes)
+    nonce = get_random_bytes(12)
+    # Crear un objeto de cifrado AES en modo GCM
+    cifrador = AES.new(key, AES.MODE_GCM, nonce=nonce)
+    with open(archivo_entrada, 'rb') as f:
+        contenido = f.read()
+    # Cifrar el contenido del archivo
+    textocifrado, tag = cifrador.encrypt_and_digest(contenido)
+    # Extraer metadatos del archivo PDF
+    metadatos = extraer_metadatos(archivo_entrada)
+    print(metadatos)
+    metadatos_json = json.dumps(metadatos).encode('utf-8')
+    print(metadatos_json)
+    # Guardar el nonce, el archivo cifrado, el tag de autenticación y los metadatos en el archivo de salida
+    with open(Ruta+archivo_salida, 'wb') as f:
+        f.write(len(metadatos_json).to_bytes(4, byteorder='big'))
+        f.write(metadatos_json)
+        f.write(nonce + textocifrado + tag)
+
+def cifrar_archivo(rol_destinatario):
+    llave_publica = Ruta + rol_destinatario + "_public.pem"
+    if 'archivo_seleccionado' not in globals():
+        messagebox.showwarning("Advertencia", "Primero debe subir un reporte.")
+        return
+    nombre_archivo = os.path.basename(archivo_seleccionado)
+    key = GenerarllaveAES(32)
+    with open(llave_publica, 'rb') as f:
+        public_key = RSA.import_key(f.read())
+    mensaje_cifrado = CifrarllaveAES(key, public_key)
+    Guardar_en_archivo(mensaje_cifrado, rol_destinatario+"_llave_AES_cifrada.bin")
+    CifradoAES_Archivo_conmetadatos(key, archivo_seleccionado, "documento_cifrado.pdf")
+    print("El documento ha sido cifrado y la llave ha sido guardada.")
+
 def iniciar_sesion():
     usuario = entry_usuario.get()
     contrasena = entry_contrasena.get()
     for user in usuarios:
         if usuario == user['username'] and contrasena == user['password']:
-            # Generar o cargar las llaves al iniciar sesión
             generar_o_cargar_rsa_keys(f"{user['role']}_private.pem", f"{user['role']}_public.pem")
             ventana_login.destroy()
             abrir_ventana_principal(user)
             return
     messagebox.showerror("Error", "Usuario o contraseña incorrectos")
 
-# Función para cerrar sesión y volver a la ventana de inicio de sesión
 def cerrar_sesion(ventana):
     ventana.destroy()
     crear_ventana_login()
 
-# Función para volver al menú anterior
 def volver_menu(ventana, ventana_principal):
     ventana.destroy()
     ventana_principal.deiconify()
@@ -54,97 +205,149 @@ def subir_reporte():
     file_path = filedialog.askopenfilename(initialdir=Ruta)
     if file_path:
         print("Archivo seleccionado:", file_path)
-        # Guardar la ruta del archivo en una variable global si es necesario
         global archivo_seleccionado
         archivo_seleccionado = file_path
     else:
         print("No se seleccionó ningún archivo")
 
-# Función para abrir la ventana de firmar reporte
+def firmar_documento(user):
+    llave_privada = Ruta + user['role'] + "_private.pem"
+    if 'archivo_seleccionado' not in globals():
+        messagebox.showwarning("Advertencia", "Primero debe subir un reporte.")
+        return
+    nombre_archivo = os.path.basename(archivo_seleccionado)
+    hash_documento = calcular_hash(archivo_seleccionado)
+    firma = sign_hash(llave_privada, hash_documento)
+    print("ESTA ES MI FIRMA", firma)
+    print("ESTA ES MI FIRMA en hexadecimal", firma.hex())
+    guardar_firma(archivo_seleccionado, Ruta + "Firma_doc.pdf", firma, '/firma_' + user['role'])
+    print("Firma guardada dentro del documento")
+
 def abrir_ventana_firmar(user, ventana_principal):
     ventana_principal.withdraw()
     ventana_firmar = tk.Tk()
     ventana_firmar.title("Firmar Reporte")
 
-    # Centrar la ventana
     ancho_ventana = 400
     alto_ventana = 300
     x_ventana = (ventana_firmar.winfo_screenwidth() // 2) - (ancho_ventana // 2)
     y_ventana = (ventana_firmar.winfo_screenheight() // 2) - (alto_ventana // 2)
     ventana_firmar.geometry(f"{ancho_ventana}x{alto_ventana}+{x_ventana}+{y_ventana}")
 
-    # Marco para los botones
     frame_botones = tk.Frame(ventana_firmar)
     frame_botones.pack(pady=20)
 
-    # Botones
     tk.Button(frame_botones, text="Subir Reporte", font=("Helvetica", 12), command=subir_reporte).grid(row=0, column=0, padx=10, pady=10)
-    tk.Button(frame_botones, text="Subir Llave", font=("Helvetica", 12)).grid(row=0, column=1, padx=10, pady=10)
-    tk.Button(frame_botones, text="Firmar Documento", font=("Helvetica", 12)).grid(row=1, column=0, columnspan=2, pady=10)
+    tk.Button(frame_botones, text="Firmar Documento", font=("Helvetica", 12), command=lambda: firmar_documento(user)).grid(row=1, column=0, columnspan=2, pady=10)
     tk.Button(ventana_firmar, text="Volver a Menu", font=("Helvetica", 12), command=lambda: volver_menu(ventana_firmar, ventana_principal)).pack(side=tk.BOTTOM, pady=20)
 
     ventana_firmar.mainloop()
 
-# Función para abrir la ventana de cifrar reporte
 def abrir_ventana_cifrar(user, ventana_principal):
     ventana_principal.withdraw()
     ventana_cifrar = tk.Tk()
     ventana_cifrar.title("Cifrar Reporte")
 
-    # Centrar la ventana
     ancho_ventana = 400
-    alto_ventana = 250
+    alto_ventana = 350
     x_ventana = (ventana_cifrar.winfo_screenwidth() // 2) - (ancho_ventana // 2)
     y_ventana = (ventana_cifrar.winfo_screenheight() // 2) - (alto_ventana // 2)
     ventana_cifrar.geometry(f"{ancho_ventana}x{alto_ventana}+{x_ventana}+{y_ventana}")
 
-    # Marco para los botones
+    # Etiqueta y desplegable para seleccionar el rol
+    label_rol = tk.Label(ventana_cifrar, text="Selecciona el rol del destinatario:")
+    label_rol.pack(pady=10)
+
+    roles = [user['role'] for user in usuarios]
+    variable_rol = tk.StringVar(ventana_cifrar)
+    variable_rol.set(roles[0])  # Valor por defecto
+    dropdown_rol = tk.OptionMenu(ventana_cifrar, variable_rol, *roles)
+    dropdown_rol.pack(pady=10)
+
     frame_botones = tk.Frame(ventana_cifrar)
     frame_botones.pack(pady=20)
 
-    # Botones
     tk.Button(frame_botones, text="Subir Reporte", font=("Helvetica", 12), command=subir_reporte).grid(row=0, column=0, padx=10, pady=10)
+    tk.Button(frame_botones, text="Cifrar Documento", font=("Helvetica", 12), command=lambda: cifrar_archivo(variable_rol.get())).grid(row=1, column=0, columnspan=2, pady=10)
     tk.Button(ventana_cifrar, text="Volver a Menu", font=("Helvetica", 12), command=lambda: volver_menu(ventana_cifrar, ventana_principal)).pack(side=tk.BOTTOM, pady=20)
 
     ventana_cifrar.mainloop()
 
-# Función para abrir la ventana correspondiente al rol
+def abrir_ventana_validar_firma(user, ventana_principal):
+    ventana_principal.withdraw()
+    ventana_validar = tk.Tk()
+    ventana_validar.title("Validar Firma")
+
+    ancho_ventana = 400
+    alto_ventana = 300
+    x_ventana = (ventana_validar.winfo_screenwidth() // 2) - (ancho_ventana // 2)
+    y_ventana = (ventana_validar.winfo_screenheight() // 2) - (alto_ventana // 2)
+    ventana_validar.geometry(f"{ancho_ventana}x{alto_ventana}+{x_ventana}+{y_ventana}")
+
+    frame_botones = tk.Frame(ventana_validar)
+    frame_botones.pack(pady=20)
+
+    tk.Button(frame_botones, text="Subir Documento", font=("Helvetica", 12), command=subir_reporte).pack(pady=10)
+
+    tk.Label(frame_botones, text="Seleccionar Rol", font=("Helvetica", 12)).pack(pady=10)
+    rol_seleccionado = tk.StringVar(frame_botones)
+    roles = ["profesor", "director", "administrador"]
+    rol_menu = tk.OptionMenu(frame_botones, rol_seleccionado, *roles)
+    rol_menu.pack(pady=10)
+
+    def validar_firma():
+        if 'archivo_seleccionado' not in globals():
+            messagebox.showwarning("Advertencia", "Primero debe subir un documento.")
+            return
+        if not rol_seleccionado.get():
+            messagebox.showwarning("Advertencia", "Debe seleccionar un rol.")
+            return
+        remitente = "/firma_" + rol_seleccionado.get()
+        signature = extract_signature_from_pdf(archivo_seleccionado, remitente)
+        if not signature:
+            messagebox.showwarning("Advertencia", f"No se encontró una firma de {rol_seleccionado.get()} en el documento.")
+            return
+        public_key_path = Ruta + rol_seleccionado.get() + "_public.pem"
+        if verify_signature(public_key_path, archivo_seleccionado, signature):
+            messagebox.showinfo("Éxito", "La firma es válida.")
+        else:
+            messagebox.showerror("Error", "La firma no es válida.")
+
+    tk.Button(frame_botones, text="Validar Firma", font=("Helvetica", 12), command=validar_firma).pack(pady=10)
+    tk.Button(ventana_validar, text="Volver a Menu", font=("Helvetica", 12), command=lambda: volver_menu(ventana_validar, ventana_principal)).pack(side=tk.BOTTOM, pady=20)
+
+    ventana_validar.mainloop()
+
 def abrir_ventana_principal(user):
     ventana_principal = tk.Tk()
     ventana_principal.title(f"Ventana de {user['role'].capitalize()}")
 
-    # Centrar la ventana
     ancho_ventana = 600
     alto_ventana = 400
     x_ventana = (ventana_principal.winfo_screenwidth() // 2) - (ancho_ventana // 2)
     y_ventana = (ventana_principal.winfo_screenheight() // 2) - (alto_ventana // 2)
     ventana_principal.geometry(f"{ancho_ventana}x{alto_ventana}+{x_ventana}+{y_ventana}")
 
-    # Mensaje de bienvenida
     tk.Label(ventana_principal, text=f"Bienvenido, {user['name']}!", font=("Helvetica", 14)).pack(pady=10)
 
-    # Marco para centrar los botones
     frame_botones = tk.Frame(ventana_principal)
     frame_botones.pack(pady=20)
 
-    # Función para crear botones con espaciado horizontal
     def crear_boton(frame, texto, command=None):
         boton = tk.Button(frame, text=texto, font=("Helvetica", 12), command=command)
         boton.pack(side=tk.LEFT, padx=10, pady=5)
         return boton
 
-    # Botones específicos según el rol
     botones = []
     if user['role'] == 'profesor':
         botones = [("Generar reporte", None), ("Firmar reporte", lambda: abrir_ventana_firmar(user, ventana_principal)), ("Cifrar reporte", lambda: abrir_ventana_cifrar(user, ventana_principal))]
     elif user['role'] == 'director':
         botones = [("Generar reporte", None), ("Firmar reporte", lambda: abrir_ventana_firmar(user, ventana_principal)), 
-                   ("Cifrar reporte", lambda: abrir_ventana_cifrar(user, ventana_principal)), ("Validar firma", None), ("Descifrar reporte", None)]
+                   ("Cifrar reporte", lambda: abrir_ventana_cifrar(user, ventana_principal)), ("Validar firma", lambda: abrir_ventana_validar_firma(user, ventana_principal)), ("Descifrar reporte", None)]
     elif user['role'] == 'administrador':
         botones = [("Generar reporte", None), ("Firmar reporte", lambda: abrir_ventana_firmar(user, ventana_principal)), 
-                   ("Cifrar reporte", lambda: abrir_ventana_cifrar(user, ventana_principal)), ("Validar firma", None), ("Descifrar reporte", None)]
+                   ("Cifrar reporte", lambda: abrir_ventana_cifrar(user, ventana_principal)), ("Validar firma", lambda: abrir_ventana_validar_firma(user, ventana_principal)), ("Descifrar reporte", None)]
 
-    # Crear botones en dos filas si hay más de tres botones
     for i, (texto, cmd) in enumerate(botones):
         if i < 3:
             crear_boton(frame_botones, texto, cmd)
@@ -154,25 +357,21 @@ def abrir_ventana_principal(user):
                 frame_botones2.pack(pady=5)
             crear_boton(frame_botones2, texto, cmd)
 
-    # Botón para cerrar sesión
     tk.Button(ventana_principal, text="Cerrar Sesión", font=("Helvetica", 12), command=lambda: cerrar_sesion(ventana_principal)).pack(side=tk.BOTTOM, pady=20)
 
     ventana_principal.mainloop()
 
-# Función para crear la ventana de inicio de sesión
 def crear_ventana_login():
     global ventana_login
     ventana_login = tk.Tk()
     ventana_login.title("Inicio de Sesión")
 
-    # Centrar la ventana
     ancho_ventana = 400
     alto_ventana = 250
     x_ventana = (ventana_login.winfo_screenwidth() // 2) - (ancho_ventana // 2)
     y_ventana = (ventana_login.winfo_screenheight() // 2) - (alto_ventana // 2)
     ventana_login.geometry(f"{ancho_ventana}x{alto_ventana}+{x_ventana}+{y_ventana}")
 
-    # Marco para centrar los widgets
     frame_login = tk.Frame(ventana_login)
     frame_login.pack(pady=20)
 
@@ -190,5 +389,4 @@ def crear_ventana_login():
 
     ventana_login.mainloop()
 
-# Iniciar la aplicación
 crear_ventana_login()
