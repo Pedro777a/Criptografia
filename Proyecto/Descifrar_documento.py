@@ -111,17 +111,17 @@ def DescifradoAES_Archivo(key, archivo_cifrado, archivo_salida):
         writer.write(f)
 
 # Importamos la llave privada 
-with open(Ruta+'director_private.pem', 'rb') as f:
+with open(Ruta+'administrador_private.pem', 'rb') as f:
     private_key = RSA.import_key(f.read())
 
 # Leemos el contendio de la llave cifrada
-Nombre_archivo="Llave_AESDirector.txt"
+Nombre_archivo="administrador_llave_AES_cifrada.bin"
 #Nombre_archivo="reporte.pdf"
-contenido = leer_archivo(Ruta + Nombre_archivo)
+contenido = Ruta + Nombre_archivo
 print(contenido)
-llave_cifrada=key=base64.b64decode(contenido)
-print(llave_cifrada) 
-llave=DescifrarllaveAES(llave_cifrada,private_key)
+#llave_cifrada=key=base64.b64decode(contenido)
+#print(llave_cifrada) 
+llave=DescifrarllaveAES(contenido,private_key)
 print("Llave descifrada: ",llave)
 
 DescifradoAES_Archivo(llave, 'reporte_cifrado.pdf', 'reporte_descifrado.pdf')

@@ -17,9 +17,9 @@ Ruta = "Proyecto/"
 
 # Datos de ejemplo para los usuarios
 usuarios = [
-    {'username': 'prof1', 'password': '1234', 'role': 'profesor', 'name': 'Profesor Uno'},
-    {'username': 'director1', 'password': '1234', 'role': 'director', 'name': 'Director Uno'},
-    {'username': 'admin1', 'password': '1234', 'role': 'administrador', 'name': 'Administrador Uno'},
+    {'username': 'prof', 'password': '1234', 'role': 'profesor', 'name': 'Profesor Uno'},
+    {'username': 'director', 'password': '1234', 'role': 'director', 'name': 'Director Uno'},
+    {'username': 'admin', 'password': '1234', 'role': 'administrador', 'name': 'Administrador Uno'},
 ]
 
 # Funciones del backend del proyecto
@@ -168,6 +168,57 @@ def CifradoAES_Archivo_conmetadatos(key, archivo_entrada, archivo_salida):
         f.write(metadatos_json)
         f.write(nonce + textocifrado + tag)
 
+def DescifrarllaveAES(mensaje_cifrado,private_key):
+    cipher_rsa = PKCS1_OAEP.new(private_key)
+    mensaje_descifrado = cipher_rsa.decrypt(mensaje_cifrado)
+    return mensaje_descifrado
+
+def DescifradoAES_Archivo(key, archivo_cifrado, archivo_salida):
+    # Leer el contenido del archivo cifrado
+    with open(Ruta+archivo_cifrado, 'rb') as f:
+        contenido_cifrado = f.read()
+    
+    # Leer la longitud de los metadatos
+    metadatos_len = int.from_bytes(contenido_cifrado[:4], byteorder='big')
+    
+    # Extraer los metadatos
+    metadatos_json = contenido_cifrado[4:4 + metadatos_len]
+    metadatos = json.loads(metadatos_json.decode('utf-8'))
+    
+    # Separar el nonce, el texto cifrado y el tag de autenticación
+    nonce = contenido_cifrado[4 + metadatos_len:4 + metadatos_len + 12]
+    tag = contenido_cifrado[-16:]
+    textocifrado = contenido_cifrado[4 + metadatos_len + 12:-16]
+
+    print(f"Nonce: {nonce}")
+    print(f"Tag: {tag}")
+    print(f"Texto cifrado: {textocifrado}")
+    print(f"Longitud del texto cifrado: {len(textocifrado)}")
+    
+    # Crear un objeto de descifrado AES en modo GCM
+    cifrador = AES.new(key, AES.MODE_GCM, nonce=nonce)
+    
+    # Descifrar y verificar el contenido del archivo
+    try:
+        contenido = cifrador.decrypt_and_verify(textocifrado, tag)
+    except ValueError as e:
+        print(f"Error durante la verificación: {e}")
+        raise e
+    
+    # Guardar el contenido descifrado en el archivo de salida
+    with open(Ruta+archivo_salida, 'wb') as f:
+        f.write(contenido)
+    
+    # Añadir los metadatos al archivo PDF descifrado
+    with open(Ruta+archivo_salida, 'rb') as f:
+        reader = PdfReader(f)
+        writer = PdfWriter()
+        writer.append_pages_from_reader(reader)
+        writer.add_metadata(metadatos)
+    
+    with open(Ruta+archivo_salida, 'wb') as f:
+        writer.write(f)
+
 def cifrar_archivo(rol_destinatario):
     llave_publica = Ruta + rol_destinatario + "_public.pem"
     if 'archivo_seleccionado' not in globals():
@@ -182,6 +233,29 @@ def cifrar_archivo(rol_destinatario):
     CifradoAES_Archivo_conmetadatos(key, archivo_seleccionado, "documento_cifrado.pdf")
     print("El documento ha sido cifrado y la llave ha sido guardada.")
 
+def Descifrar_archivo(user):
+    llave_privada = Ruta + user['role'] + "_private.pem"
+    if 'archivo_seleccionado' not in globals():
+        messagebox.showwarning("Advertencia", "Primero debe subir un reporte.")
+        return
+    nombre_archivo = os.path.basename(archivo_seleccionado)
+    ruta_llave_aes_cifrada = Ruta + user['role'] + "_llave_AES_cifrada.bin"
+
+    with open(llave_privada, 'rb') as f:
+        private_key = RSA.import_key(f.read())
+
+    with open(ruta_llave_aes_cifrada, 'rb') as f:
+        mensaje_cifrado = f.read()
+
+    print(mensaje_cifrado)
+    llave_cifrada=key=base64.b64decode(mensaje_cifrado)
+    key = DescifrarllaveAES(llave_cifrada, private_key)
+    print(f"Descifre la llave: {key}")
+    DescifradoAES_Archivo(key, nombre_archivo, "documento_descifrado.pdf")
+    messagebox.showinfo("Éxito", "El documento ha sido descifrado correctamente.")
+    """except Exception as e:
+        messagebox.showerror("Error", f"Error al descifrar el documento: {e}")
+"""
 def iniciar_sesion():
     usuario = entry_usuario.get()
     contrasena = entry_contrasena.get()
@@ -221,7 +295,7 @@ def firmar_documento(user):
     print("ESTA ES MI FIRMA", firma)
     print("ESTA ES MI FIRMA en hexadecimal", firma.hex())
     guardar_firma(archivo_seleccionado, Ruta + "Firma_doc.pdf", firma, '/firma_' + user['role'])
-    print("Firma guardada dentro del documento")
+    print("Firma guardada dentro del documento Firma_doc.pdf")
 
 def abrir_ventana_firmar(user, ventana_principal):
     ventana_principal.withdraw()
@@ -318,6 +392,26 @@ def abrir_ventana_validar_firma(user, ventana_principal):
 
     ventana_validar.mainloop()
 
+def abrir_ventana_descifrar(user, ventana_principal):
+    ventana_principal.withdraw()
+    ventana_descifrar = tk.Tk()
+    ventana_descifrar.title("Descifrar Reporte")
+
+    ancho_ventana = 400
+    alto_ventana = 300
+    x_ventana = (ventana_descifrar.winfo_screenwidth() // 2) - (ancho_ventana // 2)
+    y_ventana = (ventana_descifrar.winfo_screenheight() // 2) - (alto_ventana // 2)
+    ventana_descifrar.geometry(f"{ancho_ventana}x{alto_ventana}+{x_ventana}+{y_ventana}")
+
+    frame_botones = tk.Frame(ventana_descifrar)
+    frame_botones.pack(pady=20)
+
+    tk.Button(frame_botones, text="Subir Reporte", font=("Helvetica", 12), command=subir_reporte).pack(pady=10)
+    tk.Button(frame_botones, text="Descifrar Documento", font=("Helvetica", 12), command=lambda: Descifrar_archivo(user)).pack(pady=10)
+    tk.Button(ventana_descifrar, text="Volver a Menu", font=("Helvetica", 12), command=lambda: volver_menu(ventana_descifrar, ventana_principal)).pack(side=tk.BOTTOM, pady=20)
+
+    ventana_descifrar.mainloop()
+
 def abrir_ventana_principal(user):
     ventana_principal = tk.Tk()
     ventana_principal.title(f"Ventana de {user['role'].capitalize()}")
@@ -343,10 +437,10 @@ def abrir_ventana_principal(user):
         botones = [("Generar reporte", None), ("Firmar reporte", lambda: abrir_ventana_firmar(user, ventana_principal)), ("Cifrar reporte", lambda: abrir_ventana_cifrar(user, ventana_principal))]
     elif user['role'] == 'director':
         botones = [("Generar reporte", None), ("Firmar reporte", lambda: abrir_ventana_firmar(user, ventana_principal)), 
-                   ("Cifrar reporte", lambda: abrir_ventana_cifrar(user, ventana_principal)), ("Validar firma", lambda: abrir_ventana_validar_firma(user, ventana_principal)), ("Descifrar reporte", None)]
+                   ("Cifrar reporte", lambda: abrir_ventana_cifrar(user, ventana_principal)), ("Validar firma", lambda: abrir_ventana_validar_firma(user, ventana_principal)), ("Descifrar reporte", lambda: abrir_ventana_descifrar(user, ventana_principal))]
     elif user['role'] == 'administrador':
         botones = [("Generar reporte", None), ("Firmar reporte", lambda: abrir_ventana_firmar(user, ventana_principal)), 
-                   ("Cifrar reporte", lambda: abrir_ventana_cifrar(user, ventana_principal)), ("Validar firma", lambda: abrir_ventana_validar_firma(user, ventana_principal)), ("Descifrar reporte", None)]
+                   ("Cifrar reporte", lambda: abrir_ventana_cifrar(user, ventana_principal)), ("Validar firma", lambda: abrir_ventana_validar_firma(user, ventana_principal)), ("Descifrar reporte", lambda: abrir_ventana_descifrar(user, ventana_principal))]
 
     for i, (texto, cmd) in enumerate(botones):
         if i < 3:
