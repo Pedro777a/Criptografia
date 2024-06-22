@@ -41,6 +41,7 @@ def leer_archivo(ruta_archivo):
 
 # Funcion que genera o carga las llaves RSA para cada usuario
 def generar_o_cargar_rsa_keys(nombre_archivo_privado, nombre_archivo_publico):
+    print("---Generar o cargar claves RSA---")
     if not os.path.exists(Ruta + nombre_archivo_privado) or not os.path.exists(Ruta + nombre_archivo_publico):
         key = RSA.generate(2048)
         private_key = key.export_key()
@@ -50,9 +51,9 @@ def generar_o_cargar_rsa_keys(nombre_archivo_privado, nombre_archivo_publico):
             f.write(private_key)
         with open(Ruta + nombre_archivo_publico, "wb") as f:
             f.write(public_key)
-        print(f"Llaves generadas y guardadas en {Ruta + nombre_archivo_privado} y {Ruta + nombre_archivo_publico}")
+        print(f"Llaves generadas y guardadas en {Ruta + nombre_archivo_privado} y {Ruta + nombre_archivo_publico}\n")
     else:
-        print(f"Las llaves ya existen en {Ruta + nombre_archivo_privado} y {Ruta + nombre_archivo_publico}")
+        print(f"Las llaves ya existen en {Ruta + nombre_archivo_privado} y {Ruta + nombre_archivo_publico}\n")
 
 # Funcion que calcula el Hash de un archivo con SHA-256
 def calcular_hash(ruta_archivo):
@@ -109,7 +110,7 @@ def verify_signature(public_key_path, file_path, signature):
         public_key = load_pem_public_key(f.read())
     
     file_hash = calcular_hash(file_path)
-    
+    print("Hash calculado con exito")
     try:
         public_key.verify(
             signature,
@@ -128,7 +129,7 @@ def verify_signature(public_key_path, file_path, signature):
 def extract_signature_from_pdf(signed_pdf, remitente):
     reader = PdfReader(signed_pdf)
     metadata = reader.metadata
-    print(metadata)
+    print(f"Metadatos del archivo: {metadata}")
     signature_hex = metadata.get(remitente)
     return bytes.fromhex(signature_hex) if signature_hex else None
 
@@ -152,6 +153,7 @@ def Guardar_en_archivo(Contenido,Nombrearchivo):
 def CifrarllaveAES(mensaje_bytes,public_key):
     cipher_rsa = PKCS1_OAEP.new(public_key)
     mensaje_cifrado = cipher_rsa.encrypt(mensaje_bytes)
+    print("Llave de AES cifrada con RSA")
     return mensaje_cifrado
 
 # Funcon que extrae los metadatos de un archivo
@@ -174,9 +176,9 @@ def CifradoAES_Archivo_conmetadatos(key, archivo_entrada, archivo_salida):
     textocifrado, tag = cifrador.encrypt_and_digest(contenido)
     # Extraer metadatos del archivo PDF
     metadatos = extraer_metadatos(archivo_entrada)
-    print(metadatos)
+    print(f"Metadatos del archivo original: {metadatos}")
     metadatos_json = json.dumps(metadatos).encode('utf-8')
-    print(metadatos_json)
+    print("Metadatos agregados al archvio cifrado correctamente")
     # Guardar el nonce, el archivo cifrado, el tag de autenticación y los metadatos en el archivo de salida
     with open(Ruta+archivo_salida, 'wb') as f:
         f.write(len(metadatos_json).to_bytes(4, byteorder='big'))
@@ -197,11 +199,11 @@ def DescifradoAES_Archivo(key, archivo_cifrado, archivo_salida):
     
     # Leer la longitud de los metadatos
     metadatos_len = int.from_bytes(contenido_cifrado[:4], byteorder='big')
-    
+
     # Extraer los metadatos
     metadatos_json = contenido_cifrado[4:4 + metadatos_len]
     metadatos = json.loads(metadatos_json.decode('utf-8'))
-    
+    print(f"Metadatos del archivo cifrado extraidos: {metadatos}")
     # Separar el nonce, el texto cifrado y el tag de autenticación
     nonce = contenido_cifrado[4 + metadatos_len:4 + metadatos_len + 12]
     tag = contenido_cifrado[-16:]
@@ -233,39 +235,46 @@ def DescifradoAES_Archivo(key, archivo_cifrado, archivo_salida):
 
 # Funcion que muestra el flujo del cifrado de archivos 
 def cifrar_archivo(rol_destinatario):
+    print("---Cifrar documento---")
     llave_publica = Ruta + rol_destinatario + "_public.pem"
     if 'archivo_seleccionado' not in globals():
         messagebox.showwarning("Advertencia", "Primero debe subir un reporte.")
         return
     nombre_archivo = os.path.basename(archivo_seleccionado)
     key = GenerarllaveAES(32)
+    print(f"Llave de AES generada correctamente: {key.hex()}")
     with open(llave_publica, 'rb') as f:
         public_key = RSA.import_key(f.read())
     mensaje_cifrado = CifrarllaveAES(key, public_key)
     Guardar_en_archivo(mensaje_cifrado, rol_destinatario+"_llave_AES_cifrada.bin")
-    CifradoAES_Archivo_conmetadatos(key, archivo_seleccionado, "documento_cifrado.pdf")
-    print("El documento ha sido cifrado y la llave ha sido guardada.")
+    print(f"Llave cifrada guardada en: {Ruta+rol_destinatario+"_llave_AES_cifrada.bin"}")
+    CifradoAES_Archivo_conmetadatos(key, archivo_seleccionado, rol_destinatario+"_documento_cifrado.pdf")
+    print(f"Documento cifrado correctamente y guardado en: {Ruta+rol_destinatario+"_documento_cifrado.pdf"}\n")
+    messagebox.showinfo("Éxito", "El documento ha sido cifrado correctamente.")
+
 
 # Funcion que muestra el flujo de descifrado de archivos
 def Descifrar_archivo(user):
+    print("---Descifrar archivo---")
     llave_privada = Ruta + user['role'] + "_private.pem"
     if 'archivo_seleccionado' not in globals():
         messagebox.showwarning("Advertencia", "Primero debe subir un reporte.")
         return
     nombre_archivo = os.path.basename(archivo_seleccionado)
     ruta_llave_aes_cifrada = Ruta + user['role'] + "_llave_AES_cifrada.bin"
-
     with open(llave_privada, 'rb') as f:
         private_key = RSA.import_key(f.read())
-
+    print(f"Llave privada de {user['role']} cargada con exito")
     with open(ruta_llave_aes_cifrada, 'rb') as f:
         mensaje_cifrado = f.read()
-
+    print("Llave cifrada cargada con exito")
     try:
         llave_cifrada=key=base64.b64decode(mensaje_cifrado)
+        print(f"Llave cifrada: {llave_cifrada}")
         key = DescifrarllaveAES(llave_cifrada, private_key)
-        print(f"Descifre la llave: {key}")
-        DescifradoAES_Archivo(key, nombre_archivo, "documento_descifrado.pdf")
+        print(f"Llave descifrada: {key.hex()}")
+        DescifradoAES_Archivo(key, nombre_archivo, user['role']+"_documento_descifrado.pdf")
+        print(f"Documento descifrado correctamente y guardado en {Ruta+user['role']+"_documento_descifrado.pdf"}")
         messagebox.showinfo("Éxito", "El documento ha sido descifrado correctamente.")
     except Exception as e:
         messagebox.showerror("Error", f"Error al descifrar el documento: {e}")
@@ -304,17 +313,20 @@ def subir_reporte():
 
 # Funcion que nos muestra el flujo de firma de documento
 def firmar_documento(user):
+    print("---Firmar documento---")
     llave_privada = Ruta + user['role'] + "_private.pem"
+    print(f"Llave privada: {llave_privada} cargada exitosamente")
     if 'archivo_seleccionado' not in globals():
         messagebox.showwarning("Advertencia", "Primero debe subir un reporte.")
         return
     nombre_archivo = os.path.basename(archivo_seleccionado)
     hash_documento = calcular_hash(archivo_seleccionado)
     firma = sign_hash(llave_privada, hash_documento)
-    print("ESTA ES MI FIRMA", firma)
-    print("ESTA ES MI FIRMA en hexadecimal", firma.hex())
+    print("Firma del documento: ", firma)
+    print("Firma hexadecimal del documento: ", firma.hex())
     guardar_firma(archivo_seleccionado, Ruta + "Firma_doc.pdf", firma, '/firma_' + user['role'])
-    print("Firma guardada dentro del documento Firma_doc.pdf")
+    print("Firma guardada en los metadatos del documento Firma_doc.pdf")
+    messagebox.showinfo("Éxito", "El documento ha sido firmado correctamente.")
 
 def abrir_ventana_firmar(user, ventana_principal):
     ventana_principal.withdraw()
@@ -389,6 +401,7 @@ def abrir_ventana_validar_firma(user, ventana_principal):
     rol_menu.pack(pady=10)
 
     def validar_firma():
+        print("---Validar firma---")
         if 'archivo_seleccionado' not in globals():
             messagebox.showwarning("Advertencia", "Primero debe subir un documento.")
             return
@@ -397,10 +410,12 @@ def abrir_ventana_validar_firma(user, ventana_principal):
             return
         remitente = "/firma_" + rol_seleccionado.get()
         signature = extract_signature_from_pdf(archivo_seleccionado, remitente)
+        print(f"Firma cargada con exito: {signature}")
         if not signature:
             messagebox.showwarning("Advertencia", f"No se encontró una firma de {rol_seleccionado.get()} en el documento.")
             return
         public_key_path = Ruta + rol_seleccionado.get() + "_public.pem"
+        print(f"Llave publica de {rol_seleccionado.get()} cargada con exito")
         if verify_signature(public_key_path, archivo_seleccionado, signature):
             messagebox.showinfo("Éxito", "La firma es válida.")
         else:
@@ -453,12 +468,12 @@ def abrir_ventana_principal(user):
 
     botones = []
     if user['role'] == 'profesor':
-        botones = [("Generar reporte", None), ("Firmar reporte", lambda: abrir_ventana_firmar(user, ventana_principal)), ("Cifrar reporte", lambda: abrir_ventana_cifrar(user, ventana_principal))]
+        botones = [("Firmar reporte", lambda: abrir_ventana_firmar(user, ventana_principal)), ("Cifrar reporte", lambda: abrir_ventana_cifrar(user, ventana_principal)), ("Descifrar reporte", lambda: abrir_ventana_descifrar(user, ventana_principal))]
     elif user['role'] == 'director':
-        botones = [("Generar reporte", None), ("Firmar reporte", lambda: abrir_ventana_firmar(user, ventana_principal)), 
+        botones = [("Firmar reporte", lambda: abrir_ventana_firmar(user, ventana_principal)), 
                    ("Cifrar reporte", lambda: abrir_ventana_cifrar(user, ventana_principal)), ("Validar firma", lambda: abrir_ventana_validar_firma(user, ventana_principal)), ("Descifrar reporte", lambda: abrir_ventana_descifrar(user, ventana_principal))]
     elif user['role'] == 'administrador':
-        botones = [("Generar reporte", None), ("Firmar reporte", lambda: abrir_ventana_firmar(user, ventana_principal)), 
+        botones = [("Firmar reporte", lambda: abrir_ventana_firmar(user, ventana_principal)), 
                    ("Cifrar reporte", lambda: abrir_ventana_cifrar(user, ventana_principal)), ("Validar firma", lambda: abrir_ventana_validar_firma(user, ventana_principal)), ("Descifrar reporte", lambda: abrir_ventana_descifrar(user, ventana_principal))]
 
     for i, (texto, cmd) in enumerate(botones):
