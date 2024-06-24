@@ -5,6 +5,7 @@ import hashlib
 import PyPDF2
 import tkinter as tk
 from tkinter import messagebox, filedialog
+from PIL import Image, ImageTk
 from PyPDF2 import PdfReader, PdfWriter
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import AES, PKCS1_OAEP
@@ -489,31 +490,54 @@ def abrir_ventana_principal(user):
 
     ventana_principal.mainloop()
 
+
 def crear_ventana_login():
     global ventana_login
     ventana_login = tk.Tk()
-    ventana_login.title("Inicio de Sesión")
+    ventana_login.title("INICIO DE SESION ")
 
-    ancho_ventana = 400
-    alto_ventana = 250
+    ancho_ventana = 800
+    alto_ventana = 400
     x_ventana = (ventana_login.winfo_screenwidth() // 2) - (ancho_ventana // 2)
     y_ventana = (ventana_login.winfo_screenheight() // 2) - (alto_ventana // 2)
     ventana_login.geometry(f"{ancho_ventana}x{alto_ventana}+{x_ventana}+{y_ventana}")
 
-    frame_login = tk.Frame(ventana_login)
-    frame_login.pack(pady=20)
+    # Crear frame para la imagen a la izquierda
+    frame_imagen = tk.Frame(ventana_login, bg="#007BFF")
+    frame_imagen.pack(side="left", fill="both", expand=True)
 
-    tk.Label(frame_login, text="Usuario", font=("Helvetica", 12)).grid(row=0, column=0, padx=10, pady=10)
+    # Cargar la imagen y agregarla al frame
+    img_path = r"C:\Users\Pedro Cruz\Documents\GitHub\Criptografia\Proyecto\imagenes\OIP.png"
+    print(f"Ruta de la imagen: {img_path}")  # Instrucción de depuración para verificar la ruta
+
+    # Verificar si el archivo existe
+    if not os.path.isfile(img_path):
+        print(f"El archivo no existe en la ruta especificada: {img_path}")
+        return
+
+    img = Image.open(img_path)
+    img = img.resize((400, 400), Image.Resampling.LANCZOS)  # Ajuste aquí
+    img_tk = ImageTk.PhotoImage(img)
+    label_img = tk.Label(frame_imagen, image=img_tk, bg="#007BFF")
+    label_img.image = img_tk
+    label_img.pack(expand=True)
+
+    # Crear frame para los campos de login a la derecha
+    frame_login = tk.Frame(ventana_login, bg="white")
+    frame_login.pack(side="right", fill="both", expand=True)
+
+    tk.Label(frame_login, text="Inicio de sesión", font=("Helvetica", 18), bg="white").pack(pady=20)
+    tk.Label(frame_login, text="Usuario", font=("Helvetica", 12), bg="white").pack(pady=10)
     global entry_usuario
     entry_usuario = tk.Entry(frame_login, font=("Helvetica", 12))
-    entry_usuario.grid(row=0, column=1, padx=10, pady=10)
+    entry_usuario.pack(pady=10)
 
-    tk.Label(frame_login, text="Contraseña", font=("Helvetica", 12)).grid(row=1, column=0, padx=10, pady=10)
+    tk.Label(frame_login, text="Contraseña", font=("Helvetica", 12), bg="white").pack(pady=10)
     global entry_contrasena
     entry_contrasena = tk.Entry(frame_login, show='*', font=("Helvetica", 12))
-    entry_contrasena.grid(row=1, column=1, padx=10, pady=10)
+    entry_contrasena.pack(pady=10)
 
-    tk.Button(frame_login, text="Iniciar Sesión", command=iniciar_sesion, font=("Helvetica", 12)).grid(row=2, columnspan=2, pady=10)
+    tk.Button(frame_login, text="Iniciar sesión", command=iniciar_sesion, font=("Helvetica", 12), bg="#007BFF", fg="white").pack(pady=20)
 
     ventana_login.mainloop()
 
